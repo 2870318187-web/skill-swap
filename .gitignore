@@ -1,0 +1,18 @@
+# 需要忽略的文件（不提交到 GitHub，也不用上传到 Render）
+# 这些文件每台机器上都可以自动生成或自己下载
+
+# 依赖包目录（几百 MB，绝不上传，服务器上会自己 npm install）
+node_modules/
+
+# 前端构建产物（上传到 GitHub 前会重新构建）
+frontend/dist/
+
+# 数据库文件（每台机器首次运行会自动生成测试数据）
+backend/data.json
+
+# macOS 系统文件
+.DS_Store
+
+# 日志文件
+*.log
+npm-debug.log*

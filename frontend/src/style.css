@@ -1,0 +1,66 @@
+/* ==========================================================
+ * style.css —— 全局样式
+ * 这里放的是"整个站点通用"的样式：
+ * 页面背景、卡片阴影、渐变按钮、通用工具类等
+ * ========================================================== */
+
+/* 重置浏览器默认边距，让所有元素从同一起点开始 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* 页面整体：浅灰蓝背景 + 统一字体 */
+body {
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  background: linear-gradient(180deg, #f0f4ff 0%, #f5f7fb 100%);
+  color: #303133;
+  min-height: 100vh;
+}
+
+/* 整个应用的根容器，阻止内容横向滚动 */
+#app {
+  min-height: 100vh;
+}
+
+/* ---- 通用按钮：主按钮使用清爽蓝紫渐变，更有活力 ---- */
+.el-button--primary {
+  background: linear-gradient(135deg, #4f7cff 0%, #6a5cff 100%);
+  border: none;
+}
+.el-button--primary:hover {
+  background: linear-gradient(135deg, #3d6cff 0%, #5a4cff 100%);
+  opacity: 0.95;
+}
+
+/* ---- 卡片统一使用柔和的阴影，悬浮时轻轻抬升 ---- */
+.el-card {
+  border-radius: 12px;
+  border: none;
+  box-shadow: 0 2px 12px rgba(84, 110, 255, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.el-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(84, 110, 255, 0.15);
+}
+
+/* 可点击的卡片去掉默认的缩放效果带来的文字抖动 */
+.skill-card {
+  cursor: pointer;
+}
+
+/* ---- 页面通用容器：内容居中，留出上下间距 ---- */
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+}
+
+/* ---- 文字工具类 ---- */
+.text-ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
