@@ -49,31 +49,31 @@ function createTestData() {
         id: 'u_1001', username: 'xiaoming', password: '123456', nickname: '小明',
         avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=xiaoming',
         bio: '热爱编程的计算机系学生，愿意分享 Python 和 Web 开发经验，也想学点音乐陶冶情操。',
-        created_at: date(30)
+        gender: '男', region: '北京', created_at: date(30)
       },
       {
         id: 'u_1002', username: 'xiaohong', password: '123456', nickname: '小红',
         avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=xiaohong',
         bio: '设计系小姐姐，PS 和 UI 设计都很擅长，最近想转行搞前端，求编程大佬带带我。',
-        created_at: date(28)
+        gender: '女', region: '上海', created_at: date(28)
       },
       {
         id: 'u_1003', username: 'xiaogang', password: '123456', nickname: '小刚',
         avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=xiaogang',
         bio: '音乐系吉他高手，吉他弹唱是我的强项，想找个语伴一起练英语口语。',
-        created_at: date(25)
+        gender: '男', region: '广州', created_at: date(25)
       },
       {
         id: 'u_1004', username: 'xiaoli', password: '123456', nickname: '小李',
         avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=xiaoli',
         bio: '外语学院学霸，雅思口语 7 分，四级辅导小有名气，最近迷上了摄影想入坑。',
-        created_at: date(20)
+        gender: '女', region: '成都', created_at: date(20)
       },
       {
         id: 'u_1005', username: 'xiaowang', password: '123456', nickname: '小王',
         avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=xiaowang',
         bio: '摄影协会会长，人像摄影和 Lightroom 后期都拿得出手，想学 PS 精修图片。',
-        created_at: date(15)
+        gender: '男', region: '杭州', created_at: date(15)
       }
     ],
 

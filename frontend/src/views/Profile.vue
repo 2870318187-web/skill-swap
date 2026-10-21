@@ -18,6 +18,12 @@
               <el-avatar :size="84" :src="profile.avatar">{{ profile.nickname?.charAt(0) }}</el-avatar>
               <div class="profile-name">{{ profile.nickname }}</div>
               <div class="profile-username">@{{ profile.username }}</div>
+              <!-- 性别 + 所在地区：有任一字段才显示这一行 -->
+              <div class="profile-meta" v-if="profile.gender || profile.region">
+                <span v-if="profile.gender && profile.gender !== '保密'">{{ profile.gender }}</span>
+                <span v-if="profile.gender && profile.gender !== '保密' && profile.region"> · </span>
+                <span v-if="profile.region">{{ profile.region }}</span>
+              </div>
             </div>
             <!-- 简介 -->
             <p class="profile-bio">{{ profile.bio }}</p>
@@ -122,9 +128,19 @@
 
     <!-- ============ 编辑资料弹窗 ============ -->
     <el-dialog v-model="editDialogVisible" title="编辑资料" width="480px" :close-on-click-modal="false">
-      <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-width="70px">
+      <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-width="80px">
         <el-form-item label="昵称" prop="nickname">
           <el-input v-model="editForm.nickname" placeholder="请输入昵称" maxlength="20" show-word-limit />
+        </el-form-item>
+        <el-form-item label="性别" prop="gender">
+          <el-radio-group v-model="editForm.gender">
+            <el-radio value="男">男</el-radio>
+            <el-radio value="女">女</el-radio>
+            <el-radio value="保密">保密</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="所在地区" prop="region">
+          <el-input v-model="editForm.region" placeholder="如：北京 / 上海·浦东" maxlength="30" show-word-limit />
         </el-form-item>
         <el-form-item label="简介" prop="bio">
           <el-input v-model="editForm.bio" type="textarea" :rows="4" placeholder="介绍一下你自己吧" maxlength="200" show-word-limit />
@@ -166,7 +182,7 @@ const isSelf = computed(() => {     // 是否查看自己的主页
 
 // ---- 编辑资料弹窗 ----
 const editDialogVisible = ref(false)
-const editForm = reactive({ nickname: '', bio: '' })
+const editForm = reactive({ nickname: '', gender: '保密', region: '', bio: '' })
 const editRules = {
   nickname: [{ required: true, message: '昵称不能为空', trigger: 'blur' }]
 }
@@ -194,6 +210,8 @@ async function fetchProfile(userId) {
 /** 打开编辑资料弹窗（先填充当前值） */
 function openEditDialog() {
   editForm.nickname = profile.value.nickname
+  editForm.gender = profile.value.gender || '保密'   // 性别没填时默认显示"保密"
+  editForm.region = profile.value.region || ''         // 所在地区没填时为空
   editForm.bio = profile.value.bio || ''
   editDialogVisible.value = true
 }
@@ -206,6 +224,8 @@ async function saveProfile() {
   try {
     const updated = await request.put(`/user/${profile.value.id}`, {
       nickname: editForm.nickname,
+      gender: editForm.gender,
+      region: editForm.region,
       bio: editForm.bio
     })
     // 更新本地展示
@@ -285,6 +305,12 @@ onMounted(() => {
   font-size: 12px;
   color: #909399;
   margin-top: 4px;
+}
+/* 性别 + 所在地区那一行 */
+.profile-meta {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 6px;
 }
 .profile-bio {
   font-size: 13px;

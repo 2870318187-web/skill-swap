@@ -132,6 +132,8 @@ app.post('/api/register', (req, res) => {
     nickname: nickname || username,             // 昵称没填就用用户名
     avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${username}`, // dicebear 生成随机头像
     bio: '这个人很懒，还没有填写简介～',          // 默认简介
+    gender: '保密',                             // 性别默认"保密"，用户可在个人中心修改
+    region: '',                                 // 所在地区默认空，用户可在个人中心填写
     created_at: new Date().toISOString()
   };
   const safeUser = db.addUser(user);
@@ -173,16 +175,18 @@ app.get('/api/user/:id', (req, res) => {
 });
 
 /**
- * PUT /api/user/:id —— 更新用户资料（昵称、简介、密码）
- * 请求体：{ nickname, bio, password? }
+ * PUT /api/user/:id —— 更新用户资料（昵称、性别、所在地区、简介、密码）
+ * 请求体：{ nickname, gender, region, bio, password? }
  */
 app.put('/api/user/:id', (req, res) => {
   const id = req.params.id;
-  const { nickname, bio, password } = req.body || {};
-  // 组装要修改的字段（只允许改这三样，防注入无关字段）
+  const { nickname, bio, password, gender, region } = req.body || {};
+  // 组装要修改的字段（只允许改这几样，防注入无关字段）
   const changes = {};
   if (nickname !== undefined) changes.nickname = nickname;
   if (bio !== undefined) changes.bio = bio;
+  if (gender !== undefined) changes.gender = gender;         // 性别：男 / 女 / 保密
+  if (region !== undefined) changes.region = region;         // 所在地区：自由文本
   if (password !== undefined && password.length >= 6) changes.password = password;
 
   const updated = db.updateUser(id, changes);
