@@ -34,11 +34,14 @@ app.use(express.json());              // 解析请求体中的 JSON 数据，req
  */
 function decorateSkill(skill) {
   const publisher = db.findUserById(skill.user_id) || {}; // 查找发布者（找不到给空对象兜底）
+  const credit = db.getCreditScore(skill.user_id);         // 查发布者的信用分
   return {
     ...skill,                                     // 展开原技能的所有字段
     nickname: publisher.nickname || '未知用户',   // 发布者昵称
     avatar: publisher.avatar || '',               // 发布者头像
-    bio: publisher.bio || ''                      // 发布者简介
+    bio: publisher.bio || '',                     // 发布者简介
+    creditScore: credit.score,                    // 信用平均分（0~5，没评价则为 0）
+    reviewCount: credit.count                     // 收到的评价总数
   };
 }
 
@@ -171,7 +174,9 @@ app.get('/api/user/:id', (req, res) => {
   if (!user) {
     return res.json({ code: 1, message: '用户不存在' });
   }
-  res.json({ code: 0, data: user, message: 'ok' });
+  // 附带信用分（平均分 + 评价数），方便前端展示星级
+  const credit = db.getCreditScore(req.params.id);
+  res.json({ code: 0, data: { ...user, ...credit }, message: 'ok' });
 });
 
 /**
@@ -469,18 +474,27 @@ app.post('/api/ai/match', (req, res) => {
     });
   }
 
-  // 按分数降序排列，取前 8 条
-  results.sort((a, b) => b.score - a.score);
+  // 按综合分降序排列，取前 8 条
+  // 综合分 = 匹配度 + 信用分 × 2（信用分 0~5，最多加 10 分）
+  // 这样匹配度相近时，信用分高的会排前面（打分高优先推荐）
+  results.sort((a, b) => {
+    const creditA = db.getCreditScore(a.matchedSkill.user_id);
+    const creditB = db.getCreditScore(b.matchedSkill.user_id);
+    const totalA = a.score + creditA.score * 2;
+    const totalB = b.score + creditB.score * 2;
+    return totalB - totalA;
+  });
   const top = results.slice(0, 8);
 
-  // 组装成前端需要的结构：携带对方用户信息
+  // 组装成前端需要的结构：携带对方用户信息 + 信用分
   const data = top.map((r) => {
     const otherUser = db.findUserById(r.matchedSkill.user_id) || {};
+    const credit = db.getCreditScore(r.matchedSkill.user_id);
     return {
       score: r.score,
       matchedSkill: decorateSkill(r.matchedSkill),
       mySkill: r.mySkill,
-      other: { ...otherUser, password: undefined } // 明确去掉密码字段
+      other: { ...otherUser, password: undefined, creditScore: credit.score, reviewCount: credit.count }
     };
   });
 
@@ -529,6 +543,81 @@ app.post('/api/messages', (req, res) => {
 app.get('/api/conversations/:userId', (req, res) => {
   const conversations = db.getConversations(req.params.userId);
   res.json({ code: 0, data: conversations, message: 'ok' });
+});
+
+/* ====== 六、评价相关接口 ====== */
+
+/**
+ * POST /api/reviews —— 提交评价
+ * 请求体：{ skill_id, from_user_id, to_user_id, rating, content }
+ * 校验：rating 1~5、不能给自己评价、同一技能不能重复评价
+ */
+app.post('/api/reviews', (req, res) => {
+  const { skill_id, from_user_id, to_user_id, rating, content } = req.body || {};
+
+  // ---- 参数校验 ----
+  if (!skill_id || !from_user_id || !to_user_id) {
+    return res.json({ code: 1, message: '参数不完整' });
+  }
+  if (!rating || rating < 1 || rating > 5) {
+    return res.json({ code: 1, message: '评分需在 1~5 之间' });
+  }
+  if (from_user_id === to_user_id) {
+    return res.json({ code: 1, message: '不能给自己评价' });
+  }
+  // 防重复：同一人对同一技能只能评价一次
+  if (db.hasReviewed(skill_id, from_user_id)) {
+    return res.json({ code: 1, message: '你已经评价过这条技能了' });
+  }
+
+  // 组装评价对象并入库
+  const review = {
+    id: db.genId('r'),
+    skill_id,
+    from_user_id,
+    to_user_id,
+    rating: Math.round(rating),
+    content: (content || '').trim(),
+    created_at: new Date().toISOString()
+  };
+  db.addReview(review);
+  res.json({ code: 0, data: review, message: '评价成功' });
+});
+
+/**
+ * GET /api/skills/:id/reviews —— 获取某技能的所有评价（公开可见）
+ */
+app.get('/api/skills/:id/reviews', (req, res) => {
+  const reviews = db.getReviewsBySkillId(req.params.id);
+  // 给每条评价补上评价人的头像和昵称，方便前端展示
+  const decorated = reviews.map((r) => {
+    const fromUser = db.findUserById(r.from_user_id) || {};
+    return {
+      ...r,
+      fromNickname: fromUser.nickname || '匿名用户',
+      fromAvatar: fromUser.avatar || ''
+    };
+  });
+  res.json({ code: 0, data: decorated, message: 'ok' });
+});
+
+/**
+ * GET /api/user/:id/reviews —— 获取某用户收到的所有评价（公开可见）
+ */
+app.get('/api/user/:id/reviews', (req, res) => {
+  const reviews = db.getReviewsByUserId(req.params.id);
+  // 补上评价人信息 + 关联技能标题
+  const decorated = reviews.map((r) => {
+    const fromUser = db.findUserById(r.from_user_id) || {};
+    const skill = db.getSkillById(r.skill_id) || {};
+    return {
+      ...r,
+      fromNickname: fromUser.nickname || '匿名用户',
+      fromAvatar: fromUser.avatar || '',
+      skillTitle: skill.title || ''
+    };
+  });
+  res.json({ code: 0, data: decorated, message: 'ok' });
 });
 
 /* ====== 生产环境静态托管（前端页面） ======

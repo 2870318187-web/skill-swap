@@ -108,8 +108,14 @@ function createTestData() {
       { id: 'm_3002', from_user_id: 'u_1005', to_user_id: 'u_1004', content: '当然可以！我教你人像摄影和 LR 后期，你教我英语口语，就这么说定了！', is_read: false, created_at: date(1) }
     ],
 
-    // ---- 评价表：本项目暂未深度使用，先留空，方便以后扩展评分功能 ----
-    reviews: []
+    // ---- 评价表：技能交流结束后互相打分，公开可见 ----
+    // rating 为 1~5 的整数，content 为评价文字
+    reviews: [
+      { id: 'r_4001', skill_id: 's_2012', from_user_id: 'u_1004', to_user_id: 'u_1005', rating: 5, content: '小王教摄影超耐心，带我外拍两次，构图和用光讲得很透彻，强烈推荐！', created_at: date(4) },
+      { id: 'r_4002', skill_id: 's_2013', from_user_id: 'u_1001', to_user_id: 'u_1005', rating: 4, content: 'LR 后期调色很实用，就是节奏有点快，整体收获很大。', created_at: date(3) },
+      { id: 'r_4003', skill_id: 's_2009', from_user_id: 'u_1003', to_user_id: 'u_1004', rating: 5, content: '小李英语口语陪练太棒了，一个月下来口语自信很多，发音也标准了！', created_at: date(2) },
+      { id: 'r_4004', skill_id: 's_2001', from_user_id: 'u_1002', to_user_id: 'u_1001', rating: 5, content: '小明讲 Python 很细致，零基础也能跟上，会主动跟进学习进度，推荐！', created_at: date(1) }
+    ]
   };
 }
 
@@ -330,6 +336,64 @@ function getConversations(userId) {
   return result;
 }
 
+/* ========== 评价表操作 ========== */
+
+/**
+ * 获取某个技能的所有评价（按时间倒序，最新的排前面）
+ * @param {string} skillId 技能 id
+ * @returns {array} 评价数组
+ */
+function getReviewsBySkillId(skillId) {
+  return getDB().reviews
+    .filter((r) => r.skill_id === skillId)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
+/**
+ * 获取某个用户"收到的"所有评价（按时间倒序）
+ * @param {string} userId 被评价的用户 id
+ * @returns {array} 评价数组
+ */
+function getReviewsByUserId(userId) {
+  return getDB().reviews
+    .filter((r) => r.to_user_id === userId)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
+/**
+ * 计算某用户的信用分（收到的所有评价的平均分）
+ * @param {string} userId 用户 id
+ * @returns {object} { score: 平均分(保留一位小数), count: 评价总数 }
+ */
+function getCreditScore(userId) {
+  const reviews = getDB().reviews.filter((r) => r.to_user_id === userId);
+  if (reviews.length === 0) return { score: 0, count: 0 };
+  const sum = reviews.reduce((acc, r) => acc + r.rating, 0);
+  return { score: Math.round((sum / reviews.length) * 10) / 10, count: reviews.length };
+}
+
+/**
+ * 检查某用户是否已经对某条技能评价过（防止重复评价）
+ * @param {string} skillId 技能 id
+ * @param {string} fromUserId 评价人 id
+ * @returns {boolean} 已评价返回 true
+ */
+function hasReviewed(skillId, fromUserId) {
+  return getDB().reviews.some((r) => r.skill_id === skillId && r.from_user_id === fromUserId);
+}
+
+/**
+ * 新增一条评价
+ * @param {object} review 评价对象（id, skill_id, from_user_id, to_user_id, rating, content, created_at）
+ * @returns {object} 新增的评价对象
+ */
+function addReview(review) {
+  const db = getDB();
+  db.reviews.push(review);
+  saveDB(db);
+  return review;
+}
+
 /* ========== 导出模块 ========== */
 module.exports = {
   initDB,          // 初始化数据库
@@ -353,5 +417,11 @@ module.exports = {
   getMessagesBetween,
   addMessage,
   markMessagesRead,
-  getConversations
+  getConversations,
+  // 评价相关
+  getReviewsBySkillId,
+  getReviewsByUserId,
+  getCreditScore,
+  hasReviewed,
+  addReview
 };

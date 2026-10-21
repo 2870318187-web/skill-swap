@@ -35,6 +35,10 @@
             <el-avatar :size="52" :src="item.other.avatar">{{ item.other.nickname?.charAt(0) }}</el-avatar>
             <div class="match-user-info">
               <div class="match-name">{{ item.other.nickname }}</div>
+              <div class="match-credit" v-if="item.other.reviewCount > 0">
+                <el-rate :model-value="item.other.creditScore" disabled size="small" allow-half />
+                <span class="match-credit-text">{{ item.other.creditScore }}分 · {{ item.other.reviewCount }}评</span>
+              </div>
               <div class="match-skill">
                 <el-tag size="small" :type="item.matchedSkill.type === 'provide' ? 'success' : 'warning'" effect="light">
                   {{ item.matchedSkill.type === 'provide' ? '提供教学' : '想学技能' }}
@@ -202,6 +206,17 @@ onMounted(fetchMatch)
 .match-name {
   font-size: 17px;
   font-weight: 700;
+}
+/* 信用分行 */
+.match-credit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.match-credit-text {
+  font-size: 12px;
+  color: #909399;
 }
 .match-skill {
   margin-top: 4px;

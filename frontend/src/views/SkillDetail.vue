@@ -1,13 +1,13 @@
 <!--
   SkillDetail.vue —— 技能详情页
-  布局：左侧技能详情，右侧发布者信息卡片 + TA 的其他技能
-  数据来源：/api/skills/:id、/api/user/:id/skills
+  布局：左侧技能详情 + 评价区，右侧发布者信息卡片（含信用分） + TA 的其他技能
+  数据来源：/api/skills/:id、/api/user/:id/skills、/api/skills/:id/reviews
 -->
 <template>
   <div class="detail-page page-container" v-loading="loading">
     <template v-if="skill">
       <el-row :gutter="20">
-        <!-- ============ 左侧：技能详情 ============ -->
+        <!-- ============ 左侧：技能详情 + 评价 ============ -->
         <el-col :span="16">
           <el-card class="detail-card" shadow="always">
             <!-- 顶部：类型标签 + 标题 -->
@@ -38,6 +38,35 @@
                 联系 TA
               </el-button>
             </div>
+
+            <!-- ============ 评价区 ============ -->
+            <el-divider content-position="left">技能评价（{{ reviews.length }}）</el-divider>
+
+            <!-- 评价 TA 按钮：仅登录且非发布者可见 -->
+            <div class="review-action" v-if="canReview">
+              <el-button type="warning" plain @click="openReviewDialog">
+                <el-icon><Star /></el-icon>评价 TA
+              </el-button>
+            </div>
+            <div class="review-hint" v-else-if="!currentUser">
+              <el-text type="info" size="small">登录后可以给 TA 评价</el-text>
+            </div>
+
+            <!-- 评价列表 -->
+            <div v-if="reviews.length" class="review-list">
+              <div v-for="r in reviews" :key="r.id" class="review-item">
+                <el-avatar :size="38" :src="r.fromAvatar">{{ r.fromNickname?.charAt(0) }}</el-avatar>
+                <div class="review-content">
+                  <div class="review-top">
+                    <span class="review-name">{{ r.fromNickname }}</span>
+                    <el-rate :model-value="r.rating" disabled size="small" />
+                    <span class="review-time">{{ formatTime(r.created_at) }}</span>
+                  </div>
+                  <div class="review-text">{{ r.content || '该用户未填写评价内容' }}</div>
+                </div>
+              </div>
+            </div>
+            <el-empty v-else description="还没有人评价，快来抢沙发" :image-size="60" />
           </el-card>
         </el-col>
 
@@ -51,6 +80,14 @@
                 <div class="publisher-name">{{ skill.nickname }}</div>
                 <div class="publisher-stats">{{ skill.publisherSkillCount }} 条技能发布</div>
               </div>
+            </div>
+            <!-- 信用分展示：有评价显示星级，没评价显示"暂无评价" -->
+            <div class="credit-row" v-if="skill.reviewCount > 0">
+              <el-rate :model-value="skill.creditScore" disabled size="small" allow-half />
+              <span class="credit-text">{{ skill.creditScore }} 分 · {{ skill.reviewCount }} 条评价</span>
+            </div>
+            <div class="credit-row" v-else>
+              <span class="credit-text no-credit">暂无信用评价</span>
             </div>
             <!-- 发布者简介 -->
             <p class="publisher-bio text-ellipsis">{{ skill.bio || '这个人很懒，还没有填写简介～' }}</p>
@@ -80,29 +117,71 @@
         </el-col>
       </el-row>
     </template>
+
+    <!-- ============ 评价弹窗 ============ -->
+    <el-dialog v-model="reviewDialogVisible" title="评价 TA" width="480px" :close-on-click-modal="false">
+      <el-form label-width="70px">
+        <el-form-item label="评分">
+          <el-rate
+            v-model="reviewForm.rating"
+            :texts="['很差', '较差', '一般', '满意', '很满意']"
+            show-text
+          />
+        </el-form-item>
+        <el-form-item label="评价">
+          <el-input
+            v-model="reviewForm.content"
+            type="textarea"
+            :rows="4"
+            placeholder="说说这次技能交流的体验..."
+            maxlength="200"
+            show-word-limit
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="reviewDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitReview">提交评价</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 /**
  * 详情页逻辑：
- * 1. 根据路由参数 id 获取技能详情
- * 2. 顺带获取发布者的其他技能列表（排除当前这条）
- * 3. "联系 TA" 跳到消息中心，并通过 query 指定聊天对象
+ * 1. 根据路由参数 id 获取技能详情（含发布者信用分）
+ * 2. 获取发布者的其他技能列表（排除当前这条）
+ * 3. 获取该技能的所有评价（公开可见）
+ * 4. 登录用户（非发布者）可以提交评价
  */
-import { ref, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ChatDotRound, ArrowRight } from '@element-plus/icons-vue'
+import { ChatDotRound, ArrowRight, Star } from '@element-plus/icons-vue'
 import request from '../request'
 import { getCurrentUser } from '../auth'
 
 const route = useRoute()
 const router = useRouter()
 
-const skill = ref(null)        // 当前技能详情
+// 当前登录用户（用于判断是否能评价；详情页不强制登录，所以可能为 null）
+const currentUser = getCurrentUser()
+
+const skill = ref(null)        // 当前技能详情（含 creditScore / reviewCount）
 const otherSkills = ref([])    // 发布者的其他技能
+const reviews = ref([])        // 该技能的评价列表
 const loading = ref(false)     // 加载状态
+
+// ---- 评价弹窗相关 ----
+const reviewDialogVisible = ref(false)
+const reviewForm = reactive({ rating: 5, content: '' }) // 评分默认 5 星
+const submitting = ref(false)
+
+// 是否可以评价：已登录 且 不是发布者本人
+const canReview = computed(() => {
+  return !!currentUser && !!skill.value && currentUser.id !== skill.value.user_id
+})
 
 /**
  * 时间戳格式化为 "xxxx年x月x日"
@@ -112,15 +191,19 @@ function formatTime(iso) {
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
 }
 
-/** 加载技能详情 + 其他技能 */
+/** 加载技能详情 + 其他技能 + 评价列表 */
 async function fetchDetail() {
   loading.value = true
   try {
-    // 获取技能详情（返回对象里带发布者信息和无密码的发布者字段）
+    // 获取技能详情（返回对象里带发布者信息 + 信用分）
     skill.value = await request.get(`/skills/${route.params.id}`)
-    // 获取发布者所有技能，去掉当前这条
-    const data = await request.get(`/user/${skill.value.user_id}/skills`)
+    // 并行获取：发布者其他技能 + 该技能的评价
+    const [data, reviewList] = await Promise.all([
+      request.get(`/user/${skill.value.user_id}/skills`),
+      request.get(`/skills/${route.params.id}/reviews`)
+    ])
     otherSkills.value = [...data.provide, ...data.want].filter((s) => s.id !== skill.value.id)
+    reviews.value = reviewList
   } catch (e) {
     skill.value = null
   } finally {
@@ -146,6 +229,39 @@ function contactTa() {
 /** 点击其他技能跳转到对应详情 */
 function goSkill(id) {
   router.push(`/skill/${id}`)
+}
+
+/** 打开评价弹窗（重置表单） */
+function openReviewDialog() {
+  reviewForm.rating = 5
+  reviewForm.content = ''
+  reviewDialogVisible.value = true
+}
+
+/** 提交评价 */
+async function submitReview() {
+  if (!reviewForm.rating) {
+    return ElMessage.warning('请选择评分')
+  }
+  submitting.value = true
+  try {
+    await request.post('/reviews', {
+      skill_id: skill.value.id,
+      from_user_id: currentUser.id,
+      to_user_id: skill.value.user_id,
+      rating: reviewForm.rating,
+      content: reviewForm.content
+    })
+    ElMessage.success('评价成功，感谢你的反馈！')
+    reviewDialogVisible.value = false
+    // 重新加载技能详情（更新信用分）和评价列表
+    skill.value = await request.get(`/skills/${route.params.id}`)
+    reviews.value = await request.get(`/skills/${route.params.id}/reviews`)
+  } catch (e) {
+    /* 拦截器已提示 */
+  } finally {
+    submitting.value = false
+  }
 }
 
 // 路由变化（比如从"其他技能"点进来 id 变了）时重新加载
@@ -193,7 +309,51 @@ onMounted(fetchDetail)
   border: none;
   font-weight: 600;
 }
-/* 发布者卡片 */
+/* ---- 评价区 ---- */
+.review-action {
+  margin-bottom: 16px;
+}
+.review-hint {
+  margin-bottom: 16px;
+}
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.review-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  background: #f8f9fc;
+  border-radius: 10px;
+}
+.review-content {
+  flex: 1;
+  min-width: 0;
+}
+.review-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.review-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+.review-time {
+  font-size: 12px;
+  color: #c0c4cc;
+  margin-left: auto;
+}
+.review-text {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.6;
+}
+/* ---- 发布者卡片 ---- */
 .publisher-header {
   display: flex;
   align-items: center;
@@ -207,6 +367,20 @@ onMounted(fetchDetail)
   font-size: 12px;
   color: #909399;
   margin-top: 4px;
+}
+/* 信用分行 */
+.credit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.credit-text {
+  font-size: 12px;
+  color: #909399;
+}
+.credit-text.no-credit {
+  color: #c0c4cc;
 }
 .publisher-bio {
   margin-top: 14px;

@@ -38,6 +38,14 @@
                 <div class="stat-label">求学技能</div>
               </div>
             </div>
+            <!-- 信用分展示：有评价显示星级，没评价显示提示 -->
+            <div class="credit-box" v-if="profile.reviewCount > 0">
+              <el-rate :model-value="profile.creditScore" disabled size="small" allow-half />
+              <span class="credit-text">{{ profile.creditScore }} 分 · {{ profile.reviewCount }} 条评价</span>
+            </div>
+            <div class="credit-box" v-else>
+              <span class="credit-text no-credit">暂无信用评价</span>
+            </div>
             <!-- 操作按钮：自己=编辑资料，别人=发送消息 -->
             <div class="profile-actions">
               <template v-if="isSelf">
@@ -120,6 +128,25 @@
                   <el-button v-if="isSelf" type="primary" @click="$router.push('/publish')">去发布</el-button>
                 </el-empty>
               </el-tab-pane>
+
+              <!-- Tab 3：收到的信用评价（公开可见） -->
+              <el-tab-pane :label="`信用评价 (${reviews.length})`" name="reviews">
+                <div v-if="reviews.length" class="review-list">
+                  <div v-for="r in reviews" :key="r.id" class="review-item">
+                    <el-avatar :size="38" :src="r.fromAvatar">{{ r.fromNickname?.charAt(0) }}</el-avatar>
+                    <div class="review-body">
+                      <div class="review-head">
+                        <span class="review-from">{{ r.fromNickname }}</span>
+                        <el-rate :model-value="r.rating" disabled size="small" />
+                        <span class="review-time">{{ formatReviewTime(r.created_at) }}</span>
+                      </div>
+                      <div class="review-skill" v-if="r.skillTitle">关于「{{ r.skillTitle }}」</div>
+                      <div class="review-text">{{ r.content || '该用户未填写评价内容' }}</div>
+                    </div>
+                  </div>
+                </div>
+                <el-empty v-else description="还没有收到评价" />
+              </el-tab-pane>
             </el-tabs>
           </el-card>
         </el-col>
@@ -174,6 +201,7 @@ const router = useRouter()
 // ---- 数据 ----
 const profile = ref(null)          // 当前展示的用户信息
 const stats = ref({ provide: [], want: [] }) // 该用户的技能（已分组）
+const reviews = ref([])                      // 该用户收到的评价列表（公开可见）
 const loading = ref(false)          // 加载状态
 const activeTab = ref('provide')    // Tab 默认显示"提供的技能"
 const isSelf = computed(() => {     // 是否查看自己的主页
@@ -189,17 +217,25 @@ const editRules = {
 const editFormRef = ref(null)
 const saving = ref(false)
 
+/** 格式化评价时间为 "x月x日" */
+function formatReviewTime(iso) {
+  const d = new Date(iso)
+  return `${d.getMonth() + 1}月${d.getDate()}日`
+}
+
 /** 加载用户资料和他的技能 */
 async function fetchProfile(userId) {
   loading.value = true
   try {
-    // 两个请求并行发出
-    const [user, skillData] = await Promise.all([
+    // 并行请求：用户信息 + 技能列表 + 收到的评价
+    const [user, skillData, reviewList] = await Promise.all([
       request.get(`/user/${userId}`),
-      request.get(`/user/${userId}/skills`)
+      request.get(`/user/${userId}/skills`),
+      request.get(`/user/${userId}/reviews`)
     ])
     profile.value = user
     stats.value = skillData
+    reviews.value = reviewList
   } catch (e) {
     profile.value = null
   } finally {
@@ -344,6 +380,65 @@ onMounted(() => {
 /* 操作按钮 */
 .profile-actions .action-btn {
   width: 100%;
+}
+/* 信用分展示区 */
+.credit-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.credit-text {
+  font-size: 12px;
+  color: #909399;
+}
+.credit-text.no-credit {
+  color: #c0c4cc;
+}
+/* 评价列表 */
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 8px 4px;
+}
+.review-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  background: #f8f9fc;
+  border-radius: 10px;
+}
+.review-body {
+  flex: 1;
+  min-width: 0;
+}
+.review-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.review-from {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+.review-time {
+  font-size: 12px;
+  color: #c0c4cc;
+  margin-left: auto;
+}
+.review-skill {
+  font-size: 12px;
+  color: #4f7cff;
+  margin-bottom: 4px;
+}
+.review-text {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.6;
 }
 /* 右侧技能列表 */
 .skills-card {
