@@ -170,7 +170,16 @@
           <el-input v-model="editForm.region" placeholder="如：北京 / 上海·浦东" maxlength="30" show-word-limit />
         </el-form-item>
         <el-form-item label="简介" prop="bio">
-          <el-input v-model="editForm.bio" type="textarea" :rows="4" placeholder="介绍一下你自己吧" maxlength="200" show-word-limit />
+          <!-- AI 助写简介：输入提示词，点按钮调 AI 生成 -->
+          <div class="ai-bio-row">
+            <el-input v-model="aiKeyword" placeholder="输入提示词，如：热爱编程、喜欢分享" clearable @keyup.enter="aiGenerateBio">
+              <template #prefix><el-icon><MagicStick /></el-icon></template>
+            </el-input>
+            <el-button class="ai-bio-btn" :loading="aiLoading" @click="aiGenerateBio">
+              <el-icon v-if="!aiLoading"><Star /></el-icon>AI 帮我写
+            </el-button>
+          </div>
+          <el-input v-model="editForm.bio" type="textarea" :rows="4" placeholder="介绍一下你自己吧（也可用上方 AI 助写）" maxlength="200" show-word-limit />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -191,7 +200,7 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { EditPen, ChatDotRound } from '@element-plus/icons-vue'
+import { EditPen, ChatDotRound, MagicStick, Star } from '@element-plus/icons-vue'
 import request from '../request'
 import { getCurrentUser, setCurrentUser } from '../auth'
 
@@ -217,10 +226,37 @@ const editRules = {
 const editFormRef = ref(null)
 const saving = ref(false)
 
+// ---- AI 助写简介 ----
+const aiKeyword = ref('')    // AI 助写的提示词输入框
+const aiLoading = ref(false) // AI 生成中
+
 /** 格式化评价时间为 "x月x日" */
 function formatReviewTime(iso) {
   const d = new Date(iso)
   return `${d.getMonth() + 1}月${d.getDate()}日`
+}
+
+/** AI 助写简介：调后端生成简介文案并回填到编辑框 */
+async function aiGenerateBio() {
+  if (!aiKeyword.value.trim()) {
+    return ElMessage.warning('请先输入提示词，比如"热爱编程、喜欢分享"')
+  }
+  aiLoading.value = true
+  try {
+    const data = await request.post('/ai/generate-bio', {
+      keyword: aiKeyword.value.trim(),
+      nickname: editForm.nickname,
+      gender: editForm.gender,
+      region: editForm.region
+    })
+    // 把 AI 生成的简介回填到编辑框
+    editForm.bio = data.bio
+    ElMessage.success('AI 简介已生成，可以再手动修改')
+  } catch (e) {
+    /* 拦截器已提示 */
+  } finally {
+    aiLoading.value = false
+  }
 }
 
 /** 加载用户资料和他的技能 */
@@ -395,6 +431,23 @@ onMounted(() => {
 }
 .credit-text.no-credit {
   color: #c0c4cc;
+}
+/* AI 助写简介区 */
+.ai-bio-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 10px;
+}
+.ai-bio-row .el-input {
+  flex: 1;
+}
+.ai-bio-btn {
+  background: linear-gradient(135deg, #ff9a56, #ff5e8a);
+  color: #fff;
+  font-weight: 600;
+  border: none;
+  white-space: nowrap;
 }
 /* 评价列表 */
 .review-list {

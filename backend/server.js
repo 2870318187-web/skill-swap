@@ -103,6 +103,45 @@ function mockGenerateDescription(opts) {
     `如果你也对这些内容感兴趣，欢迎联系我一起交流学习！`;
 }
 
+/**
+ * 模拟生成"自我简介"文案（AI 助写简介用）
+ * @param {object} opts 包含 keyword / nickname / gender / region
+ * @returns {string} 生成的简介文案
+ */
+function mockGenerateBio(opts) {
+  const { keyword, nickname, gender, region } = opts;
+  const genderText = gender === '女' ? '女生' : gender === '男' ? '男生' : '同学';
+  return `大家好，我是来自${region || '校园'}的${nickname || genderText}。${keyword || '我热爱学习，也乐于分享'}。` +
+    `平时喜欢探索新知识，也愿意把自己擅长的东西教给身边的同学。` +
+    `希望能在这里认识志同道合的小伙伴，互相学习、共同进步！`;
+}
+
+/**
+ * 违禁词列表（演示用，覆盖常见的违法/违规内容）
+ * 实际项目可接入专业的内容安全 API（如阿里云内容安全、腾讯云天御等）
+ */
+const FORBIDDEN_WORDS = [
+  '赌博', '毒品', '诈骗', '色情', '暴力', '枪支', '洗钱', '传销',
+  '违禁品', '代写论文', '考试作弊', '黑客攻击', '人身买卖', '假证', '走私'
+];
+
+/**
+ * AI 内容审核：检查文本是否包含违禁/违法内容
+ * @param {string} text 待审核文本
+ * @returns {object} { passed: boolean, reason: string }
+ *   passed=true 表示通过；passed=false 表示不通过，reason 说明命中了什么违禁词
+ */
+function reviewContent(text) {
+  if (!text || !text.trim()) return { passed: true, reason: '' };
+  // 遍历违禁词列表，命中任何一个就拒绝
+  for (const word of FORBIDDEN_WORDS) {
+    if (text.includes(word)) {
+      return { passed: false, reason: `包含违禁词"${word}"` };
+    }
+  }
+  return { passed: true, reason: '' };
+}
+
 /* ====== 一、用户相关接口 ====== */
 
 /**
@@ -189,7 +228,14 @@ app.put('/api/user/:id', (req, res) => {
   // 组装要修改的字段（只允许改这几样，防注入无关字段）
   const changes = {};
   if (nickname !== undefined) changes.nickname = nickname;
-  if (bio !== undefined) changes.bio = bio;
+  if (bio !== undefined) {
+    // 简介内容审核：包含违禁词则拒绝修改
+    const bioReview = reviewContent(bio);
+    if (!bioReview.passed) {
+      return res.json({ code: 1, message: '简介审核未通过：' + bioReview.reason + '，请修改后重试' });
+    }
+    changes.bio = bio;
+  }
   if (gender !== undefined) changes.gender = gender;         // 性别：男 / 女 / 保密
   if (region !== undefined) changes.region = region;         // 所在地区：自由文本
   if (password !== undefined && password.length >= 6) changes.password = password;
@@ -285,6 +331,12 @@ app.post('/api/skills', (req, res) => {
   const user = db.findUserById(user_id);
   if (!user) {
     return res.json({ code: 1, message: '用户不存在' });
+  }
+
+  // ---- 内容审核：标题 + 描述不能包含违禁词 ----
+  const skillReview = reviewContent(title + ' ' + description);
+  if (!skillReview.passed) {
+    return res.json({ code: 1, message: '内容审核未通过：' + skillReview.reason + '，请修改后重试' });
   }
 
   // ---- 组装技能对象并入库 ----
@@ -424,6 +476,64 @@ app.post('/api/ai/generate-description', async (req, res) => {
       message: 'AI 接口调用失败，已回退到模拟回复'
     });
   }
+});
+
+/**
+ * POST /api/ai/generate-bio —— AI 生成自我简介
+ * 请求体：{ keyword, nickname, gender, region }
+ * 没配置 API Key 时走模拟回复，配了走真实大模型
+ */
+app.post('/api/ai/generate-bio', async (req, res) => {
+  const { keyword, nickname, gender, region } = req.body || {};
+  const API_KEY = process.env.OPENAI_API_KEY || '';
+  const usingMock = !API_KEY;
+
+  // ---- 没配置 Key：模拟生成 ----
+  if (usingMock) {
+    const bio = mockGenerateBio({ keyword, nickname, gender, region });
+    return res.json({
+      code: 0,
+      data: { bio, usingMock: true },
+      message: '当前为模拟回复，配置 OPENAI_API_KEY 后可使用真实大模型'
+    });
+  }
+
+  // ---- 配置了 Key：调用真实大模型 ----
+  try {
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: '你是一个校园技能交换平台的小助手，请根据用户的关键信息，帮他写一段 50~100 字的中文自我简介，语气真诚友好、积极向上。' },
+          { role: 'user', content: `昵称：${nickname || '未填写'}；性别：${gender || '保密'}；地区：${region || '未知'}；提示词：${keyword || ''}` }
+        ],
+        max_tokens: 200
+      })
+    });
+    const json = await resp.json();
+    const bio = json.choices?.[0]?.message?.content || mockGenerateBio({ keyword, nickname, gender, region });
+    res.json({ code: 0, data: { bio, usingMock: false }, message: 'ok' });
+  } catch (err) {
+    // 真实接口失败时回退到模拟回复
+    res.json({
+      code: 0,
+      data: { bio: mockGenerateBio({ keyword, nickname, gender, region }), usingMock: true },
+      message: 'AI 接口调用失败，已回退到模拟回复'
+    });
+  }
+});
+
+/**
+ * POST /api/ai/review-content —— AI 内容审核（供前端预检用，提交时后端还会再审一次）
+ * 请求体：{ text }
+ * 返回：{ passed: boolean, reason: string }
+ */
+app.post('/api/ai/review-content', (req, res) => {
+  const { text } = req.body || {};
+  const result = reviewContent(text);
+  res.json({ code: 0, data: result, message: 'ok' });
 });
 
 /**
@@ -568,6 +678,12 @@ app.post('/api/reviews', (req, res) => {
   // 防重复：同一人对同一技能只能评价一次
   if (db.hasReviewed(skill_id, from_user_id)) {
     return res.json({ code: 1, message: '你已经评价过这条技能了' });
+  }
+
+  // ---- 内容审核：评价内容不能包含违禁词 ----
+  const reviewCheck = reviewContent(content);
+  if (!reviewCheck.passed) {
+    return res.json({ code: 1, message: '评价审核未通过：' + reviewCheck.reason + '，请修改后重试' });
   }
 
   // 组装评价对象并入库
